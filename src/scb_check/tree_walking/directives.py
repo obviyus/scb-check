@@ -14,11 +14,19 @@ from token import NL
 from tokenize import TokenError
 from tokenize import TokenInfo
 from tokenize import generate_tokens
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple, cast
 
 import yaml
 
 from scb_check.resources import load_rule_ids
+from scb_check.tree_walking.dispatch import DEFAULT_EXTENSION_LANGUAGES
+from scb_check.tree_walking.dispatch import parse_source_file
+from scb_check.tree_walking.languages._node_helpers import iter_nodes
+from scb_check.tree_walking.languages._node_helpers import text
+from scb_check.tree_walking.models import Language
+
+if TYPE_CHECKING:
+    from tree_sitter import Tree
 
 _IGNORE_DIRECTIVE_RE = re.compile(
     r"^scbc\s+ignore\[(?P<rule_ids>[^\]]*)\].*$",
@@ -47,7 +55,9 @@ class IgnoreDirective:
     rule_ids: tuple[str, ...]
 
 
-class IgnoreDirectiveError(ValueError):  # scbc ignore[empty-exception-subclass] Boundary error type consumed by CLI.
+class IgnoreDirectiveError(
+    ValueError
+):  # scbc ignore[empty-exception-subclass] Boundary error type consumed by CLI.
     """Raised when source directives are malformed or invalid."""
 
 
@@ -77,7 +87,8 @@ def parse_ignore_directives(
     directives: list[IgnoreDirective] = []
     errors: list[str] = []
     for file_path, source in sorted(
-        source_by_file.items(), key=lambda item: item[0].as_posix(),
+        source_by_file.items(),
+        key=lambda item: item[0].as_posix(),
     ):
         file_directives, file_errors = _parse_file_directives(
             file_path,
@@ -99,10 +110,11 @@ def parse_boundary_directives(
     directives: list[BoundaryDirective] = []
     errors: list[str] = []
     for file_path, source in sorted(
-        source_by_file.items(), key=lambda item: item[0].as_posix(),
+        source_by_file.items(),
+        key=lambda item: item[0].as_posix(),
     ):
         try:
-            scan = _scan_directives(source)
+            scan = _scan_directives(file_path, source)
         except TokenError as exc:
             errors.append(
                 (
@@ -144,7 +156,7 @@ def _parse_file_directives(
     valid_rule_ids: frozenset[str],
 ) -> tuple[tuple[IgnoreDirective, ...], tuple[str, ...]]:
     try:
-        scan = _scan_directives(source)
+        scan = _scan_directives(file_path, source)
     except TokenError as exc:
         return (), (
             (
@@ -190,15 +202,55 @@ def _parse_file_directives(
     return tuple(directives), tuple(errors)
 
 
-def _scan_directives(source: str) -> DirectiveScan:
+def _scan_directives(file_path: Path, source: str) -> DirectiveScan:
+    if DEFAULT_EXTENSION_LANGUAGES.get(file_path.suffix.lower()) == (
+        Language.TYPESCRIPT,
+    ):
+        return _scan_typescript_directives(file_path, source)
     comments: dict[int, tuple[str, bool]] = {}
     code_lines: set[int] = set()
     ignore_matches: list[tuple[int, str]] = []
     boundary_lines: list[int] = []
 
-    for token in generate_tokens(iter(source.splitlines(keepends=True)).__next__):
+    for token in generate_tokens(
+        iter(source.splitlines(keepends=True)).__next__
+    ):
         _scan_token(token, comments, code_lines, ignore_matches, boundary_lines)
 
+    return DirectiveScan(
+        comments_by_line=comments,
+        code_lines=code_lines,
+        ignore_matches=tuple(ignore_matches),
+        boundary_lines=tuple(boundary_lines),
+    )
+
+
+def _scan_typescript_directives(file_path: Path, source: str) -> DirectiveScan:
+    parsed = parse_source_file(file_path, source)
+    # The dispatched TypeScript parser always supplies a Tree-sitter tree.
+    tree = cast("Tree", parsed.native_tree)
+    nodes = iter_nodes(tree.root_node)
+    code_lines = {
+        node.start_point[0] + 1
+        for node in nodes
+        if not node.children and node.type != "comment"
+    }
+    comments: dict[int, tuple[str, bool]] = {}
+    ignore_matches: list[tuple[int, str]] = []
+    boundary_lines: list[int] = []
+    for node in nodes:
+        if node.type != "comment":
+            continue
+        content = (
+            text(node).removeprefix("//").removeprefix("/*").removesuffix("*/")
+        )
+        for offset, line in enumerate(content.splitlines()):
+            line_no = node.start_point[0] + offset + 1
+            comment_text = line.strip().removeprefix("*").strip()
+            comments[line_no] = (comment_text, line_no in code_lines)
+            _record_comment(
+                comment_text, line_no, ignore_matches, boundary_lines
+            )
     return DirectiveScan(
         comments_by_line=comments,
         code_lines=code_lines,
@@ -224,12 +276,23 @@ def _scan_token(
         comment_text,
         token.line[: token.start[1]].strip() != "",
     )
+    _record_comment(
+        comment_text, token.start[0], ignore_matches, boundary_lines
+    )
+
+
+def _record_comment(
+    comment_text: str,
+    line: int,
+    ignore_matches: list[tuple[int, str]],
+    boundary_lines: list[int],
+) -> None:
     ignore_directive = _match_ignore_directive(comment_text)
     if ignore_directive is not None:
-        ignore_matches.append((token.start[0], ignore_directive))
+        ignore_matches.append((line, ignore_directive))
         return
     if _BOUNDARY_DIRECTIVE_RE.match(comment_text):
-        boundary_lines.append(token.start[0])
+        boundary_lines.append(line)
 
 
 def _match_ignore_directive(comment_text: str) -> str | None:
@@ -307,7 +370,9 @@ def _get_target_line(
 
 
 def _token_error_line(exc: TokenError) -> int:
-    if len(exc.args) >= _TOKEN_ERROR_LOCATION_ARG and isinstance(exc.args[1], tuple):
+    if len(exc.args) >= _TOKEN_ERROR_LOCATION_ARG and isinstance(
+        exc.args[1], tuple
+    ):
         line_no = exc.args[1][0]
         if isinstance(line_no, int):
             return line_no

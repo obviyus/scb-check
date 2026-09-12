@@ -72,7 +72,20 @@ def rule_texts() -> Iterator[tuple[str, str]]:
     """Yield bundled and environment-provided ast-grep rule text."""
     rules_dir = resources.files(_RULES_PACKAGE).joinpath(_RULES_DIR_NAME)
     for name in _rule_file_names():
-        yield name, rules_dir.joinpath(name).read_text(encoding="utf-8")
+        text = rules_dir.joinpath(name).read_text(encoding="utf-8")
+        yield name, text
+        if name == "typescript.yaml":
+            # The grammars share rules and IDs, but ast-grep dispatches by language.
+            yield (
+                "tsx.yaml",
+                yaml.safe_dump_all(
+                    (
+                        {**document, "language": "Tsx"}
+                        for document in _rule_documents_from_text(text)
+                    ),
+                    explicit_start=True,
+                ),
+            )
 
     for path in _extra_rules():
         yield path.name, path.read_text(encoding="utf-8")
@@ -131,21 +144,23 @@ def _rule_documents_from_text(text: str) -> tuple[RuleDocument, ...]:
     return tuple(_normalized_rule_documents(yaml.safe_load_all(text)))
 
 
-def _normalized_rule_documents(documents: Iterator[object]) -> Iterator[RuleDocument]:
+def _normalized_rule_documents(
+    documents: Iterator[object],
+) -> Iterator[RuleDocument]:
     for document in documents:
         normalized = _rule_document(document)
         if normalized is not None:
             yield normalized
 
 
-def _rule_document(document: object) -> RuleDocument | None:  # scbc ignore[object-type-annotation]
+def _rule_document(
+    document: object,
+) -> RuleDocument | None:  # scbc ignore[object-type-annotation]
     # scbc boundary: normalize rule metadata loaded from YAML.
     if not isinstance(document, Mapping):
         return None
     return {
-        key: value
-        for key, value in document.items()
-        if isinstance(key, str)
+        key: value for key, value in document.items() if isinstance(key, str)
     }
 
 
@@ -157,7 +172,9 @@ def _severity(document: RuleDocument) -> tuple[str, RuleSeverity] | None:
     return None
 
 
-def _rule_severity(value: object) -> RuleSeverity | None:  # scbc ignore[object-type-annotation]
+def _rule_severity(
+    value: object,
+) -> RuleSeverity | None:  # scbc ignore[object-type-annotation]
     match value:
         case "info":
             return "info"

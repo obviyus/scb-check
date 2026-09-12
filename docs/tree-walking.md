@@ -4,7 +4,7 @@ Tree walking turns already-read supported source into language-agnostic facts th
 
 ## Boundaries
 
-`tree_walking/` does not discover files or read from disk. `pipeline.py` reads source text, then calls `parse_source_file(path, source)` and keeps the returned `ParsedFile` plus the source indexes needed for rendering and Python directive parsing.
+`tree_walking/` does not discover files or read from disk. `pipeline.py` reads source text, then calls `parse_source_file(path, source)` and keeps the returned `ParsedFile` plus the source indexes needed for rendering and source directive parsing.
 
 `ParsedFile` intentionally has two sides:
 
@@ -36,7 +36,9 @@ Do not put raw tree-sitter nodes into `ModuleIR`, `SymbolIR`, `OperationIR`, `Va
 
 A parser raises `LanguageParseError` when it cannot parse source for its own language. Dispatch wraps parser failures in `ProjectParseError`, which `pipeline.py` logs as a warning before skipping that file.
 
-The default dispatch table knows Python (`.py`, `.pyw`), Rust (`.rs`), JavaScript (`.js`, `.mjs`, `.cjs`), TypeScript (`.ts`), Zig (`.zig`), Haskell (`.hs`), and C++ (`.cpp`, `.cc`, `.cxx`, `.c++`, `.hpp`, `.hh`, `.hxx`). CLI discovery supplies those supported suffixes.
+The default dispatch table knows Python (`.py`, `.pyw`), Rust (`.rs`), JavaScript (`.js`, `.mjs`, `.cjs`), TypeScript (`.ts`, `.tsx`, `.mts`, `.cts`), Zig (`.zig`), Haskell (`.hs`), and C++ (`.cpp`, `.cc`, `.cxx`, `.c++`, `.hpp`, `.hh`, `.hxx`). CLI discovery supplies those supported suffixes.
+
+TSX selects the JSX grammar; TS/MTS/CTS keep angle-bracket assertions. TypeScript function expressions are counted alongside arrows, declarations, generators, and methods. Quoted JSX attributes with raw ampersands can trigger a known upstream parse failure; failed files are warned about and excluded, as with other syntax failures.
 
 ## `SLOC`
 
@@ -83,7 +85,7 @@ Rust, JavaScript, TypeScript, Zig, Haskell, and C++ use `GenericTreeSitterParser
 - function and method symbols, including JavaScript and TypeScript generator functions, with names, owners, signatures, spans, `SLOC`, cyclomatic complexity, and cognitive complexity,
 - parser-native trees retained on `ParsedFile` for clone hashing and syntax node counts.
 
-It does not yet emit imports, references, body operations, value summaries, or source directives for non-Python languages. Structural rules therefore remain Python-only until they have language-specific semantic facts.
+It does not yet emit imports, references, body operations, or value summaries for non-Python languages. TypeScript directives are parsed separately from comment nodes. Structural rules therefore remain Python-only until they have language-specific semantic facts.
 
 ## Operations and values
 
@@ -110,7 +112,7 @@ Structural rules do not inspect decorators, base-class syntax, or Python nodes d
 
 Source directives are part of tree walking, but they are parsed separately from `PythonWalker` because they need the full source map and the shared rule namespace.
 
-`directives.py` scans Python comment tokens with `tokenize`; it does not raw-search text. Non-Python files are skipped by directive filtering. It parses:
+`directives.py` scans Python comments with `tokenize` and TypeScript comments with Tree-sitter. It does not raw-search text. TypeScript supports `//` and `/* ... */`, including multiline block comments. Other languages are skipped by directive filtering. It parses:
 
 - `# scbc ignore[rule-id]`, which applies to the same line when it follows code, or to the next non-blank, non-comment code line when standalone,
 - `# scbc boundary`, which records the directive line.

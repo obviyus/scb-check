@@ -136,8 +136,8 @@ jobs:
               if name.startswith("scb_check/resources/slop_rules/")
               and name.endswith(".yaml")
           ]
-          if len(rule_files) != 8:
-              raise SystemExit(f"expected 8 bundled rule files, found {len(rule_files)}")
+          if len(rule_files) != 9:
+              raise SystemExit(f"expected 9 bundled rule files, found {len(rule_files)}")
           PY
 
       - name: Smoke-test wheel install

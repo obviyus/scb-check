@@ -54,7 +54,7 @@ CLI (`cli.py` / `commands/`)
 ## Layers
 
 - Boundary: `cli.py`, `commands/`, `config.py`, `walker.py`, and `logging.py` parse arguments, load configuration, walk paths, and wire logging. They do not score code.
-- Tree walking: `tree_walking/` parses already-read supported source, computes `SLOC`, parses Python source directives, emits language-agnostic IR, and builds semantic project context. See [Tree walking](tree-walking.md).
+- Tree walking: `tree_walking/` parses already-read supported source, computes `SLOC`, parses Python and TypeScript source directives, emits language-agnostic IR, and builds semantic project context. See [Tree walking](tree-walking.md).
 - Analysis: `analysis/` owns integrations that intentionally use external or parser-native details: `ast-grep` subprocess execution and clone hashing.
 - Rules: `rules/` owns structural rule classes, their registry, metadata, and the runner.
 - Reporting: `reporting/` turns `Flags` into JSON reports or human-readable flag text. JSON reports include score summaries plus syntax tree and node counts by parsed language.
@@ -66,13 +66,13 @@ CLI (`cli.py` / `commands/`)
 : Real source lines of code. Comments, blank lines, punctuation-only delimiter lines in generic parsers, and standalone non-byte, non-f-string Python string statements do not count.
 
 `source directive`
-: Python comment directive parsed with `tokenize`, such as `# scbc ignore[...]` or `# scbc boundary`.
+: Comment directive parsed with Python `tokenize` or TypeScript Tree-sitter comment nodes, such as `scbc ignore[...]` or `scbc boundary`.
 
 `boundary suppression`
 : `# scbc boundary` inside a function body hides default `ast-grep` findings in that function. Use `--include-all` to show boundary-suppressed findings.
 
 `ast-grep rule`
-: Python YAML-backed rule run by the `sg` subprocess. Extra local rules come from `SCB_CHECK_EXTRA_SLOP_RULES`.
+: Language-specific YAML-backed rule run by the `sg` subprocess. Extra local rules come from `SCB_CHECK_EXTRA_SLOP_RULES`.
 
 `clone finding`
 : Duplicate syntax block found by hashing normalized tree-sitter subtrees. Candidates must contain at least two executable body statements in one duplicated body; signatures, comments, blanks, and Python docstrings do not satisfy that threshold.
@@ -98,8 +98,8 @@ CLI (`cli.py` / `commands/`)
 ## Design constraints
 
 - Line numbers are 1-indexed after tree-sitter data leaves the parser layer.
-- Supported scan targets are Python (`.py`, `.pyw`), Rust (`.rs`), JavaScript (`.js`, `.mjs`, `.cjs`), TypeScript (`.ts`), Zig (`.zig`), Haskell (`.hs`), and C++ (`.cpp`, `.cc`, `.cxx`, `.c++`, `.hpp`, `.hh`, `.hxx`).
-- `ast-grep`, structural rules, and source directives are Python-only until language-specific rule sets exist.
+- Supported scan targets are Python (`.py`, `.pyw`), Rust (`.rs`), JavaScript (`.js`, `.mjs`, `.cjs`), TypeScript (`.ts`, `.tsx`, `.mts`, `.cts`), Zig (`.zig`), Haskell (`.hs`), and C++ (`.cpp`, `.cc`, `.cxx`, `.c++`, `.hpp`, `.hh`, `.hxx`).
+- `ast-grep` and source directives support Python and TypeScript; structural rules remain Python-only.
 - Parser-native data may live on parsed file artifacts for clone detection, but not in `ModuleIR`, `ProjectIR`, or structural rules.
 - `ast-grep` failure is non-fatal. `scb-check` tries a global `sg` binary first, then falls back to package-managed ast-grep executables next to Python if global `sg` is missing or fails. If no ast-grep binary succeeds, `OSError`, non-zero exits, or invalid JSON return no hits.
 - Source ignores and structural rules share one rule ID namespace, so `scbc ignore[...]` is never ambiguous.

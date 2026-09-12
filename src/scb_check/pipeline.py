@@ -95,7 +95,9 @@ def analyze(
     disable_sg: bool = False,
 ) -> AnalysisResult:
     """Analyze supported source files under `path` using `config`."""
-    files = tuple(sorted(walk_source_files(path, config, include_ignored=include_all)))
+    files = tuple(
+        sorted(walk_source_files(path, config, include_ignored=include_all))
+    )
     if not files:
         raise FileNotFoundError(f"no supported source files found at {path}")
     return analyze_files(
@@ -137,8 +139,12 @@ def _collect_findings(
     low_use_short_function: LowUseShortFunctionSettings,
 ) -> Findings:
     sources = _parse_sources(files)
-    project = build_project(tuple(parsed.module for parsed in sources.parsed_files))
-    functions = _function_symbols(tuple(project.symbols_by_qualified_name.values()))
+    project = build_project(
+        tuple(parsed.module for parsed in sources.parsed_files)
+    )
+    functions = _function_symbols(
+        tuple(project.symbols_by_qualified_name.values())
+    )
     structural_findings = run_rules(
         project,
         low_use_short_function=low_use_short_function,
@@ -252,13 +258,13 @@ def _run_and_filter_rules(
         if include_all:
             return ast_hits, structural_findings
 
-        python_source_by_file = _source_by_language(sources, Language.PYTHON)
+        rule_sources = _rule_sources(sources)
         ignore_directives = parse_ignore_directives(
-            python_source_by_file,
+            rule_sources,
             valid_rule_ids=_valid_rule_ids(rules_path),
         )
         boundary_ranges = _boundary_function_ranges(
-            parse_boundary_directives(python_source_by_file),
+            parse_boundary_directives(rule_sources),
             functions,
         )
         return (
@@ -286,38 +292,25 @@ def _run_ast_grep(
     *,
     disable_sg: bool,
 ) -> tuple[tuple[AstGrepHit, ...], dict[str, int]]:
-    python_files = _files_by_language(sources, Language.PYTHON)
-    if disable_sg or not python_files:
+    rule_files = tuple(_rule_sources(sources))
+    if disable_sg or not rule_files:
         return (), {}
 
     thresholds = load_thresholds(rules_path)
     rule_severities = load_rule_severities(rules_path)
     ast_hits = _with_ast_hit_severities(
-        run_sg(python_files, rules_path),
+        run_sg(rule_files, rules_path),
         rule_severities,
     )
     return ast_hits, thresholds
 
 
-def _files_by_language(
-    sources: ParsedSources,
-    language: Language,
-) -> tuple[Path, ...]:
-    return tuple(
-        file_path
-        for file_path in sources.source_lines_by_file
-        if sources.language_by_file.get(file_path) is language
-    )
-
-
-def _source_by_language(
-    sources: ParsedSources,
-    language: Language,
-) -> dict[Path, str]:
+def _rule_sources(sources: ParsedSources) -> dict[Path, str]:
     return {
         file_path: source
         for file_path, source in sources.source_by_file.items()
-        if sources.language_by_file.get(file_path) is language
+        if sources.language_by_file[file_path]
+        in {Language.PYTHON, Language.TYPESCRIPT}
     }
 
 

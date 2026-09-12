@@ -2,11 +2,17 @@
 
 Python CLI that reports SCBench verbosity and erosion composites for supported source codebases.
 
+This fork adds TypeScript slop patterns and TSX, MTS, and CTS scanning. Run this fork with:
+
+```bash
+uvx --from git+https://github.com/obviyus/scb-check scb-check check PATH
+```
+
 - [Paper](https://arxiv.org/abs/2603.24755)
 - [Source](https://github.com/gabeorlanski/scb-check)
 - [SlopCodeBench (main repo)](https://github.com/SprocketLab/slop-code-bench)
 
-- **Verbosity**: fraction of SLOC flagged by clone detection, ast-grep slop rules, or structural rules. Non-Python languages currently contribute clone lines only.
+- **Verbosity**: fraction of SLOC flagged by clone detection, ast-grep slop rules, or structural rules. Python and TypeScript contribute slop-pattern lines; other languages contribute clone lines only.
 - **Erosion**: share of function "mass" (`complexity * sqrt(sloc)`) concentrated in high-complexity functions (cyclomatic complexity > 10).
 - **Cognitive erosion**: same mass-share calculation using cognitive complexity > 10.
 
@@ -59,7 +65,48 @@ scb-check check PATH --min-duplicate-lines N  # show duplicate groups with at le
 scb-check rule RULE_ID                  # print YAML or metadata for a specific rule
 ```
 
-`PATH` may be a file or directory. Directories are walked for supported source files: Python (`.py`, `.pyw`), Rust (`.rs`), JavaScript (`.js`, `.mjs`, `.cjs`), TypeScript (`.ts`), Zig (`.zig`), Haskell (`.hs`), and C++ (`.cpp`, `.cc`, `.cxx`, `.c++`, `.hpp`, `.hh`, `.hxx`). Directory discovery respects `.gitignore` globs by default; use `--include-all` to scan gitignored supported files too.
+`PATH` may be a file or directory. Directories are walked for supported source files: Python (`.py`, `.pyw`), Rust (`.rs`), JavaScript (`.js`, `.mjs`, `.cjs`), TypeScript (`.ts`, `.tsx`, `.mts`, `.cts`), Zig (`.zig`), Haskell (`.hs`), and C++ (`.cpp`, `.cc`, `.cxx`, `.c++`, `.hpp`, `.hh`, `.hxx`). Directory discovery respects `.gitignore` globs by default; use `--include-all` to scan gitignored supported files too.
+
+### TypeScript checks
+
+TSX uses the JSX grammar. Other TypeScript files retain the TypeScript grammar, including angle-bracket assertions. All variants contribute to the `typescript` report entry. TS and TSX use the same rule definitions and IDs:
+
+| Rule | Default severity | Candidate |
+| --- | --- | --- |
+| `ts-catch-static-fallback` | warning | Catch returns only an empty fallback |
+| `ts-empty-catch` | warning | Catch discards all errors |
+| `ts-rethrow-only-catch` | warning | Catch only rethrows its input |
+| `ts-boolean-ternary` | warning | Conditional returns boolean literals |
+| `ts-boolean-return` | warning | If/else returns boolean literals |
+| `ts-identical-ternary-branches` | warning | Both branches contain the same expression |
+| `ts-double-assertion` | warning | Assertion through `unknown` or `any` |
+| `ts-nested-if` | info | Nested if without another statement or else |
+| `ts-explicit-any` | info | Explicit `any` type |
+| `ts-non-null-assertion` | info | Non-null assertion |
+
+Informational findings appear with `--include-all`. These checks inspect syntax, not compiler types or runtime intent. Structural wrapper and low-use-helper rules remain Python-only. The TypeScript rule set is smaller than the Python set; their verbosity scores are not directly comparable.
+
+Suppress an accepted case with a line comment or block comment:
+
+```typescript
+// scbc ignore[ts-double-assertion] Adapter for the external library's documented contract.
+const result = raw as unknown as Result;
+
+function parseExternal(raw: string) {
+  // scbc boundary: normalize external input
+  return JSON.parse(raw);
+}
+```
+
+Strings, template text, regex literals, and JSX text cannot create directives. A boundary directive suppresses slop patterns in its containing function. Clone and complexity findings remain visible.
+
+The pinned Tree-sitter grammar can reject valid TSX attributes containing raw ampersands before semicolons, such as a font URL. Affected files are warned about and skipped. Check stderr and `files_scanned` before treating a report as complete; this tool does not replace the TypeScript compiler.
+
+### Reading the scores
+
+Use scores to select code for review and to track a fixed source scope over time. Keep the checker revision, rules, and exclusions fixed when comparing runs. Added source can lower a ratio even when the count of flagged lines rises. Review the absolute counts and named functions alongside the ratios.
+
+A low score does not establish good design or correctness. These metrics do not measure coupling, cohesion, or whether an abstraction fits the domain. Do not remove needed checks, split functions, or add code merely to improve a score. See [Measuring code sloppiness](https://earendil.com/posts/measuring-code-sloppiness/) for the limits of these measures.
 
 ### JSON report fields
 
@@ -108,7 +155,7 @@ enabled = true
 
 Configured `exclude` patterns still apply when `--include-all` is used; only `.gitignore` file discovery is extended.
 
-Ast-grep slop rules, structural rules, and source directives are currently Python-only. Rust, JavaScript, TypeScript, Zig, Haskell, and C++ still participate in SLOC totals, clone detection, cyclomatic erosion, and cognitive erosion.
+Ast-grep slop rules and source directives support Python and TypeScript. Structural rules remain Python-only. All supported languages participate in SLOC totals, clone detection, cyclomatic erosion, and cognitive erosion.
 
 When using `pyproject.toml`, scb-check also includes excludes from:
 
@@ -171,7 +218,7 @@ Rules:
 
 - **Tree walking**: language dispatch backed by tree-sitter grammars emits language-agnostic `ModuleIR` and semantic project context.
 - **Clone detection**: hashed AST blocks across the scanned set; two or more matching instances become a `CloneBlock`.
-- **Slop patterns**: Python ast-grep rules in `src/scb_check/resources/slop_rules/` split by category (e.g. `range(len(x))`, `dict.get(k, None)`, `isinstance` ladders, manual min/max, defensive guards).
+- **Slop patterns**: Python and TypeScript ast-grep rules in `src/scb_check/resources/slop_rules/`. The resource loader emits a TSX version of the TypeScript rules with the same IDs.
 - **Structural rules**: typed Python classes in `src/scb_check/rules/` run over tree-walking IR. `trivial-wrapper` flags removable single-return pass-through functions (identity returns and calls that only forward parameters to another scanned function), while semantic keep reasons skip constant returns, default-backed value providers, external calls, decorated functions, dunder methods, and inherited API implementations. `low-use-short-function` flags short helpers with few resolved call sites only when inlining them would stay within configured caller SLOC, complexity, cognitive complexity, and nesting budgets.
 - **Extra local slop patterns**: set `SCB_CHECK_EXTRA_SLOP_RULES` to a `:`-separated list of YAML paths to layer additional rules on top of the bundled set.
 - **Complexity**: per-function cyclomatic and cognitive complexity plus SLOC, combined into mass scores for erosion metrics.

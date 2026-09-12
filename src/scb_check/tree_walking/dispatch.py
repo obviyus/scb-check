@@ -47,6 +47,9 @@ DEFAULT_EXTENSION_LANGUAGES: ExtensionLanguages = {
     ".pyw": (Language.PYTHON,),
     ".rs": (Language.RUST,),
     ".ts": (Language.TYPESCRIPT,),
+    ".tsx": (Language.TYPESCRIPT,),
+    ".mts": (Language.TYPESCRIPT,),
+    ".cts": (Language.TYPESCRIPT,),
     ".zig": (Language.ZIG,),
 }
 SUPPORTED_SOURCE_SUFFIXES = frozenset(DEFAULT_EXTENSION_LANGUAGES)

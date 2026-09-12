@@ -2,16 +2,24 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+from typing import TYPE_CHECKING
+
 import tree_sitter_typescript
 
 from scb_check.tree_walking.languages.generic import GenericTreeSitterParser
 from scb_check.tree_walking.languages.generic import TreeSitterLanguageConfig
 from scb_check.tree_walking.models import Language
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from scb_check.tree_walking.artifacts import ParsedFile
+
 _TYPESCRIPT_FUNCTIONS = frozenset(
     {
         "arrow_function",
-        "function",
+        "function_expression",
         "function_declaration",
         "generator_function",
         "generator_function_declaration",
@@ -19,7 +27,7 @@ _TYPESCRIPT_FUNCTIONS = frozenset(
     },
 )
 _TYPESCRIPT_ANONYMOUS_FUNCTIONS = frozenset(
-    {"arrow_function", "function", "generator_function"},
+    {"arrow_function", "function_expression", "generator_function"},
 )
 _TYPESCRIPT_BRANCHES = frozenset(
     {"catch_clause", "if_statement", "switch_statement", "ternary_expression"},
@@ -53,7 +61,9 @@ TYPESCRIPT_CONFIG = TreeSitterLanguageConfig(
     jump_node_types=frozenset({"break_statement", "continue_statement"}),
     boolean_expression_node_types=frozenset({"binary_expression"}),
     comment_node_types=frozenset({"comment"}),
-    clone_node_types=_TYPESCRIPT_FUNCTIONS | _TYPESCRIPT_BRANCHES | _TYPESCRIPT_LOOPS,
+    clone_node_types=_TYPESCRIPT_FUNCTIONS
+    | _TYPESCRIPT_BRANCHES
+    | _TYPESCRIPT_LOOPS,
     literal_node_types=_TYPESCRIPT_LITERALS,
 )
 
@@ -64,3 +74,15 @@ class TypeScriptParser(GenericTreeSitterParser):
     def __init__(self) -> None:
         """Initialize the TypeScript parser."""
         super().__init__(TYPESCRIPT_CONFIG)
+        self._tsx = GenericTreeSitterParser(
+            replace(
+                TYPESCRIPT_CONFIG,
+                tree_sitter_language=tree_sitter_typescript.language_tsx,
+            )
+        )
+
+    def parse(self, file_path: Path, source: str) -> ParsedFile:
+        """Select the JSX grammar by extension; preserve TS angle assertions."""
+        if file_path.suffix.lower() == ".tsx":
+            return self._tsx.parse(file_path, source)
+        return super().parse(file_path, source)

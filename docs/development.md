@@ -15,11 +15,11 @@ Implemented analysis paths:
 - Tree-sitter parsing into language-agnostic IR.
 - `SLOC` accounting shared by verbosity, clone line counts, and rule spans.
 - Duplicate-structure detection by normalized AST hashing for all supported languages.
-- Bundled Python `ast-grep` slop patterns, plus optional local rules from `SCB_CHECK_EXTRA_SLOP_RULES`.
+- Bundled Python and TypeScript `ast-grep` slop patterns, plus optional local rules from `SCB_CHECK_EXTRA_SLOP_RULES`.
 - Structural rules over `ProjectIR`; the current bundled Python rules are `trivial-wrapper` and opt-in `low-use-short-function`.
 - Cyclomatic and cognitive erosion scores for all supported languages.
-- Python source ignores for `ast-grep` and structural rule IDs.
-- Python boundary suppression for validation/normalization functions.
+- Python and TypeScript source ignores for `ast-grep` and structural rule IDs.
+- Python and TypeScript boundary suppression for validation/normalization functions.
 
 ## Runtime contracts
 
@@ -48,8 +48,10 @@ Implemented analysis paths:
 1. Add or update YAML under `src/scb_check/resources/slop_rules/`.
 2. Use a unique rule ID across both `ast-grep` and structural rules.
 3. Set severity and any `min_file_count` metadata deliberately.
-4. Add behavioral tests that exercise `pipeline.run_sg` through monkeypatching rather than invoking `sg`.
+4. Use monkeypatched `pipeline.run_sg` for unit tests of scoring/filtering. Add marked integration tests against the packaged matcher for grammar-specific positive and negative cases.
 5. Update README or docs if the rule changes user-facing behavior or scoring expectations.
+
+TypeScript rules live in `typescript.yaml`. Resource loading emits a TSX variant with the same IDs, so the grammars share one maintained rule set. Keep `scbc` suppressions and score accounting covered for both grammars.
 
 ## Adding a structural rule
 
@@ -76,7 +78,7 @@ Pay special attention to:
 
 - `verbosity` as a union, never a sum,
 - `SLOC` as the denominator for verbosity and the source of counted flagged lines,
-- non-Python verbosity currently includes clone LOC but not Python ast-grep or structural rule LOC,
+- TypeScript verbosity includes clone and TypeScript ast-grep LOC; other non-Python languages contribute clone LOC only,
 - high-complexity threshold `> 10`,
 - mass formulas for `erosion` and `cog_erosion`,
 - line spans used by clone, `ast-grep`, and structural findings.
