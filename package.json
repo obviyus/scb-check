@@ -1,6 +1,6 @@
 {
   "name": "@obviyus/oxlint-slop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "Oxlint rules for redundant and over-defensive TypeScript and JavaScript",
   "license": "Apache-2.0",
@@ -16,6 +16,10 @@
     "./config": {
       "types": "./src/config.ts",
       "default": "./dist/config.js"
+    },
+    "./score": {
+      "types": "./src/score.ts",
+      "default": "./dist/score.js"
     }
   },
   "files": [
@@ -28,10 +32,11 @@
     "check": "bun run typecheck && bun run build && bun run lint && bun test test",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint src test",
-    "build": "bun build src/plugin.ts src/config.ts --outdir dist --target node --packages external"
+    "build": "bun build src/plugin.ts src/config.ts src/score-config.ts src/score-cli.ts src/score.ts --outdir dist --target node --packages external"
   },
   "dependencies": {
-    "@oxlint/plugins": "1.78.0"
+    "@oxlint/plugins": "1.78.0",
+    "zod": "4.6.2"
   },
   "peerDependencies": {
     "oxlint": ">=1.78.0"
@@ -40,5 +45,8 @@
     "@types/bun": "1.4.2",
     "oxlint": "1.78.0",
     "typescript": "7.0.2"
+  },
+  "bin": {
+    "oxlint-slop-score": "./dist/score-cli.js"
   }
 }

@@ -1,5 +1,7 @@
 import { definePlugin, defineRule } from "@oxlint/plugins";
-import type { ESTree, SourceCode } from "@oxlint/plugins";
+import type { ESTree } from "@oxlint/plugins";
+import { isDuplicateCandidate, tokenSignature } from "./blocks.js";
+import { fileMetricsRule } from "./metrics.js";
 
 function singleStatement(statement: ESTree.Statement): ESTree.Statement | undefined {
   if (statement.type !== "BlockStatement") return statement;
@@ -11,10 +13,6 @@ function booleanReturn(statement: ESTree.Statement): boolean | undefined {
   if (single?.type !== "ReturnStatement" || single.argument?.type !== "Literal") return undefined;
   const value = single.argument.value;
   return value === true || value === false ? value : undefined;
-}
-
-function tokenSignature(source: SourceCode, node: ESTree.Node): string {
-  return JSON.stringify(source.getTokens(node).map((token) => [token.type, token.value]));
 }
 
 const noSilentCatchFallback = defineRule({
@@ -124,10 +122,7 @@ const noDuplicateBlocks = defineRule({
     const blocks = new Map<string, ESTree.BlockStatement[]>();
     return {
       BlockStatement(node) {
-        const statements = node.body.filter((statement) =>
-          statement.type !== "EmptyStatement" && statement.type !== "TSTypeAliasDeclaration" &&
-          statement.type !== "TSInterfaceDeclaration" && statement.type !== "TSDeclareFunction");
-        if (statements.length < 2) return;
+        if (!isDuplicateCandidate(node)) return;
         const signature = tokenSignature(context.sourceCode, node);
         const group = blocks.get(signature);
         if (group === undefined) blocks.set(signature, [node]);
@@ -149,6 +144,7 @@ const noDuplicateBlocks = defineRule({
 export default definePlugin({
   meta: { name: "slop" },
   rules: {
+    "file-metrics": fileMetricsRule,
     "no-silent-catch-fallback": noSilentCatchFallback,
     "no-boolean-return-branches": noBooleanReturnBranches,
     "no-identical-ternary-branches": noIdenticalTernaryBranches,

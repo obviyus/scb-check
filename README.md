@@ -1,6 +1,6 @@
 # Oxlint Slop
 
-An [Oxlint](https://oxc.rs/docs/guide/usage/linter.html) plugin that flags redundant code and error handling that hides failures: catches that return empty data, `if`/`else` that only returns `true` or `false`, ternaries with identical branches, needless nesting, `as unknown as T` casts, and copy-pasted blocks. Oxlint does the parsing, configuration, suppression comments, editor diagnostics, and output formats. This package only adds rules.
+An [Oxlint](https://oxc.rs/docs/guide/usage/linter.html) plugin that flags redundant code and error handling that hides failures: catches that return empty data, `if`/`else` that only returns `true` or `false`, ternaries with identical branches, needless nesting, `as unknown as T` casts, and copy-pasted blocks. Oxlint does the parsing, configuration, suppression comments, editor diagnostics, and output formats. An optional score command aggregates Oxlint's findings and plugin metrics.
 
 ## Install
 
@@ -29,6 +29,29 @@ bunx oxlint --format json .    # machine-readable output
 ```
 
 The preset enables all six `slop/` rules as warnings and adds the four native Oxlint rules listed below, on top of Oxlint's own defaults. The `slop/` rules have no automatic fixes. Each warning marks a place to review, not a proven defect.
+
+## Scores
+
+Run the score command after installing the package:
+
+```bash
+bunx oxlint-slop-score .
+bunx oxlint-slop-score . --json
+bunx oxlint-slop-score src app --exclude '**/*.test.ts'
+```
+
+It runs Oxlint once with the packaged scoring preset. Oxlint remains the only parser and file walker. The preset enables `slop/file-metrics` for that run; normal linting does not emit metrics. Scores use this fixed preset rather than your project's custom rules or nested configs. Oxlint's default file ignores apply, and `--exclude` adds ignore patterns.
+
+- **Verbosity** is the union of duplicate-block lines and lines marked by the five custom pattern rules plus native `no-empty`, `no-useless-catch`, and `no-unneeded-ternary`, divided by source lines of code. Complexity warnings do not enter verbosity.
+- **Erosion** is the fraction of function mass in functions with more than 10 independent paths. Function mass is `complexity * sqrt(source lines)`.
+
+Source lines contain nonblank tokens; comments and delimiter-only lines do not count. Function source lines cover the full function span. Complexity uses the classic branch count, including defaults, short-circuit operations, and optional chains. Nested functions are counted separately; static blocks and field initializers do not enter function erosion.
+
+Scoring compares duplicate block signatures across all scanned files and counts every copy, including the first. Overlapping duplicate and pattern spans count once. Normal duplicate lint warnings remain within each file. Pattern suppressions apply to verbosity; duplicate line coverage is an independent measurement.
+
+The JSON report includes both ratios on a 0–1 scale, absolute counts, every measured file and function, duplicate groups, original diagnostics, versions, and scope. The text output shows percentages. These use the SCBench formulas with this plugin's JavaScript/TypeScript rules and exact-token duplicate detection; they are not directly comparable to published Python benchmark scores.
+
+A scan with missing file metrics exits `2` and returns `null` scores. This includes parse failures and blanket suppression of `slop/file-metrics`. A valid file with no source lines or functions has an undefined ratio, shown as `null` rather than a zero. A complete scan exits `0` regardless of its scores.
 
 ## Rules
 

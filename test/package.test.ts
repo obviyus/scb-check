@@ -17,7 +17,7 @@ test("the packed plugin loads from node_modules with its exported configuration"
       private: true,
       type: "module",
       dependencies: {
-        "@obviyus/oxlint-slop": `file:${join(directory, "obviyus-oxlint-slop-0.1.0.tgz")}`,
+        "@obviyus/oxlint-slop": `file:${join(directory, "obviyus-oxlint-slop-0.2.0.tgz")}`,
         "@oxlint/plugins": `file:${join(repository, "node_modules/@oxlint/plugins")}`,
         oxlint: `file:${join(repository, "node_modules/oxlint")}`,
       },
@@ -31,6 +31,11 @@ test("the packed plugin loads from node_modules with its exported configuration"
     const result: { diagnostics: { code: string }[]; number_of_files: number } = JSON.parse(new TextDecoder().decode(linted.stdout));
     expect(result.number_of_files).toBe(1);
     expect(result.diagnostics.map((item) => item.code)).toEqual(["slop(no-silent-catch-fallback)"]);
+    const scored = Bun.spawnSync([join(consumer, "node_modules/.bin/oxlint-slop-score"), "--json", "view.tsx"], { cwd: consumer, stdout: "pipe", stderr: "pipe" });
+    expect(scored.exitCode, new TextDecoder().decode(scored.stderr)).toBe(0);
+    const score: { complete: boolean; scores: { verbosity: number; erosion: number } } = JSON.parse(new TextDecoder().decode(scored.stdout));
+    expect(score.complete).toBe(true);
+    expect(score.scores).toEqual({ verbosity: 1, erosion: 0 });
   } finally {
     await rm(directory, { recursive: true });
   }

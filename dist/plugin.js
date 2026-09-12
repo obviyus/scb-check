@@ -1,5 +1,132 @@
 // src/plugin.ts
-import { definePlugin, defineRule } from "@oxlint/plugins";
+import { definePlugin, defineRule as defineRule2 } from "@oxlint/plugins";
+
+// src/blocks.ts
+function tokenSignature(source, node) {
+  return JSON.stringify(source.getTokens(node).map((token) => [token.type, token.value]));
+}
+function isDuplicateCandidate(node) {
+  return node.body.filter((statement) => statement.type !== "EmptyStatement" && statement.type !== "TSTypeAliasDeclaration" && statement.type !== "TSInterfaceDeclaration" && statement.type !== "TSDeclareFunction").length >= 2;
+}
+
+// src/metrics.ts
+import { createHash } from "node:crypto";
+import { defineRule } from "@oxlint/plugins";
+var DELIMITERS = new Set(["{", "}", "[", "]", "(", ")", ";", ",", ":"]);
+function isFunction(node) {
+  return node.type === "FunctionDeclaration" || node.type === "FunctionExpression" || node.type === "ArrowFunctionExpression";
+}
+function lineSpan(node) {
+  return { startLine: node.loc.start.line, endLine: node.loc.end.line - (node.loc.end.column === 0 ? 1 : 0) };
+}
+function functionName(node, source) {
+  if (node.id)
+    return node.id.name;
+  const parent = node.parent;
+  if (parent.type === "VariableDeclarator" && parent.id.type === "Identifier")
+    return parent.id.name;
+  if (parent.type === "MethodDefinition" || parent.type === "Property" || parent.type === "PropertyDefinition")
+    return source.getText(parent.key);
+  return "(anonymous)";
+}
+var fileMetricsRule = defineRule({
+  meta: {
+    type: "suggestion",
+    docs: { description: "Emit file metrics for oxlint-slop-score; off during normal linting." },
+    messages: { metrics: "{{data}}" }
+  },
+  create(context) {
+    const functions = new Map;
+    const blocks = [];
+    function enterFunction(node) {
+      if (node.body === null)
+        return;
+      functions.set(node, { ...lineSpan(node), name: functionName(node, context.sourceCode), column: node.loc.start.column + 1, complexity: 1 });
+    }
+    function increment(node) {
+      let child = node;
+      let parent = node.parent;
+      while (parent !== null && parent.type !== "Program") {
+        if (isFunction(parent)) {
+          const metric = functions.get(parent);
+          if (metric)
+            metric.complexity += 1;
+          return;
+        }
+        if (parent.type === "StaticBlock" || (parent.type === "PropertyDefinition" || parent.type === "AccessorProperty") && parent.value === child)
+          return;
+        child = parent;
+        parent = parent.parent;
+      }
+    }
+    return {
+      FunctionDeclaration: enterFunction,
+      FunctionExpression: enterFunction,
+      ArrowFunctionExpression: enterFunction,
+      IfStatement: increment,
+      ConditionalExpression: increment,
+      LogicalExpression: increment,
+      ForStatement: increment,
+      ForInStatement: increment,
+      ForOfStatement: increment,
+      WhileStatement: increment,
+      DoWhileStatement: increment,
+      CatchClause: increment,
+      AssignmentPattern: increment,
+      SwitchCase(node) {
+        if (node.test !== null)
+          increment(node);
+      },
+      AssignmentExpression(node) {
+        if (["&&=", "||=", "??="].includes(node.operator))
+          increment(node);
+      },
+      MemberExpression(node) {
+        if (node.optional)
+          increment(node);
+      },
+      CallExpression(node) {
+        if (node.optional)
+          increment(node);
+      },
+      BlockStatement(node) {
+        if (!isDuplicateCandidate(node))
+          return;
+        blocks.push({ ...lineSpan(node), signature: createHash("sha256").update(tokenSignature(context.sourceCode, node)).digest("hex") });
+      },
+      "Program:exit"(node) {
+        const source = context.sourceCode;
+        const codeLines = new Set;
+        for (const token of source.getTokens(node)) {
+          if (token.type === "Punctuator" && DELIMITERS.has(token.value))
+            continue;
+          for (const [index, text] of source.getText(token).split(/\r\n|[\n\r\u2028\u2029]/u).entries()) {
+            if (text.trim())
+              codeLines.add(token.loc.start.line + index);
+          }
+        }
+        let previous = 0;
+        let bytes = source.hasBOM ? 3 : 0;
+        const lineStarts = source.lineStartIndices.map((index) => {
+          bytes += Buffer.byteLength(source.text.slice(previous, index));
+          previous = index;
+          return index === 0 ? 0 : bytes;
+        });
+        const data = {
+          version: 1,
+          sourceBytes: Buffer.byteLength(source.text) + (source.hasBOM ? 3 : 0),
+          lineStarts,
+          codeLines: [...codeLines].sort((a, b) => a - b),
+          functions: [...functions.values()],
+          blocks
+        };
+        context.report({ node, messageId: "metrics", data: { data: JSON.stringify(data) } });
+      }
+    };
+  }
+});
+
+// src/plugin.ts
 function singleStatement(statement) {
   if (statement.type !== "BlockStatement")
     return statement;
@@ -12,10 +139,7 @@ function booleanReturn(statement) {
   const value = single.argument.value;
   return value === true || value === false ? value : undefined;
 }
-function tokenSignature(source, node) {
-  return JSON.stringify(source.getTokens(node).map((token) => [token.type, token.value]));
-}
-var noSilentCatchFallback = defineRule({
+var noSilentCatchFallback = defineRule2({
   meta: {
     type: "suggestion",
     docs: { description: "Report catches that replace every error with empty data." },
@@ -35,7 +159,7 @@ var noSilentCatchFallback = defineRule({
     };
   }
 });
-var noBooleanReturnBranches = defineRule({
+var noBooleanReturnBranches = defineRule2({
   meta: {
     type: "suggestion",
     docs: { description: "Report if/else branches that only convert a condition to a boolean." },
@@ -55,7 +179,7 @@ var noBooleanReturnBranches = defineRule({
     };
   }
 });
-var noIdenticalTernaryBranches = defineRule({
+var noIdenticalTernaryBranches = defineRule2({
   meta: {
     type: "suggestion",
     docs: { description: "Report conditional expressions with identical branch tokens." },
@@ -71,7 +195,7 @@ var noIdenticalTernaryBranches = defineRule({
     };
   }
 });
-var noNestedOnlyIf = defineRule({
+var noNestedOnlyIf = defineRule2({
   meta: {
     type: "suggestion",
     docs: { description: "Report an if whose only statement is another if without else." },
@@ -88,7 +212,7 @@ var noNestedOnlyIf = defineRule({
     };
   }
 });
-var noDoubleAssertion = defineRule({
+var noDoubleAssertion = defineRule2({
   meta: {
     type: "suggestion",
     docs: { description: "Report assertions through any or unknown that bypass assignability." },
@@ -106,7 +230,7 @@ var noDoubleAssertion = defineRule({
     return { TSAsExpression: check, TSTypeAssertion: check };
   }
 });
-var noDuplicateBlocks = defineRule({
+var noDuplicateBlocks = defineRule2({
   meta: {
     type: "suggestion",
     docs: { description: "Report repeated blocks in one file, ignoring whitespace and comments." },
@@ -116,8 +240,7 @@ var noDuplicateBlocks = defineRule({
     const blocks = new Map;
     return {
       BlockStatement(node) {
-        const statements = node.body.filter((statement) => statement.type !== "EmptyStatement" && statement.type !== "TSTypeAliasDeclaration" && statement.type !== "TSInterfaceDeclaration" && statement.type !== "TSDeclareFunction");
-        if (statements.length < 2)
+        if (!isDuplicateCandidate(node))
           return;
         const signature = tokenSignature(context.sourceCode, node);
         const group = blocks.get(signature);
@@ -142,6 +265,7 @@ var noDuplicateBlocks = defineRule({
 var plugin_default = definePlugin({
   meta: { name: "slop" },
   rules: {
+    "file-metrics": fileMetricsRule,
     "no-silent-catch-fallback": noSilentCatchFallback,
     "no-boolean-return-branches": noBooleanReturnBranches,
     "no-identical-ternary-branches": noIdenticalTernaryBranches,
