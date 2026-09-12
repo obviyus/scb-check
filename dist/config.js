@@ -1,7 +1,7 @@
+// src/config.ts
 import { defineConfig } from "oxlint";
 import { fileURLToPath } from "node:url";
-
-export default defineConfig({
+var config_default = defineConfig({
   jsPlugins: [{ name: "slop", specifier: fileURLToPath(new URL("./plugin.js", import.meta.url)) }],
   rules: {
     "slop/no-silent-catch-fallback": "warn",
@@ -13,6 +13,9 @@ export default defineConfig({
     "no-empty": ["warn", { allowEmptyCatch: false }],
     "no-useless-catch": "warn",
     "no-unneeded-ternary": "warn",
-    complexity: ["warn", { max: 10 }],
-  },
+    complexity: ["warn", { max: 10 }]
+  }
 });
+export {
+  config_default as default
+};

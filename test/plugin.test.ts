@@ -16,7 +16,7 @@ interface LintReport {
 
 const directories: string[] = [];
 const binary = resolve(import.meta.dir, "../node_modules/.bin/oxlint");
-const config = resolve(import.meta.dir, "../src/config.ts");
+const config = resolve(import.meta.dir, "../dist/config.js");
 
 afterEach(async () => {
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })));

@@ -89,3 +89,5 @@ bun run check
 ```
 
 Tests run the real Oxlint CLI and cover valid cases, reported cases, all supported extensions, suppression comments, and file isolation across workers.
+
+`bun run build` generates the committed JavaScript in `dist/` so consumers need no install scripts or TypeScript loader. Tests also install the packed package and load its exported configuration from `node_modules`. CI checks that `dist/` matches the TypeScript source.
