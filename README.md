@@ -1,16 +1,18 @@
 # Oxlint Slop
 
-An Oxlint plugin for redundant code and error handling that hides failures. Written in TypeScript. Oxlint owns parsing, configuration, suppressions, editor diagnostics, and JSON output.
+An [Oxlint](https://oxc.rs/docs/guide/usage/linter.html) plugin that flags redundant code and error handling that hides failures: catches that return empty data, `if`/`else` that only returns `true` or `false`, ternaries with identical branches, needless nesting, `as unknown as T` casts, and copy-pasted blocks. Oxlint does the parsing, configuration, suppression comments, editor diagnostics, and output formats. This package only adds rules.
 
 ## Install
 
-Requires Oxlint 1.78 or later. Install from this repository:
+Requires Oxlint 1.78 or later. The package is installed from GitHub:
 
 ```bash
 bun add --dev oxlint github:obviyus/scb-check
 ```
 
-Use the recommended configuration in `oxlint.config.ts`:
+## Quick start
+
+Create `oxlint.config.ts` with the preset:
 
 ```typescript
 import slop from "@obviyus/oxlint-slop/config";
@@ -18,47 +20,96 @@ import slop from "@obviyus/oxlint-slop/config";
 export default slop;
 ```
 
-Run normal Oxlint commands:
+Run Oxlint as usual:
 
 ```bash
-bunx oxlint .
-bunx oxlint --format json .
-bunx oxlint --deny-warnings .
+bunx oxlint .                  # report warnings
+bunx oxlint --deny-warnings .  # exit non-zero on any warning, for CI
+bunx oxlint --format json .    # machine-readable output
 ```
 
-The preset emits warnings. `--deny-warnings` makes warnings fail a check. Nothing is automatically fixed by the custom rules.
+The preset enables all six `slop/` rules as warnings and adds the four native Oxlint rules listed below, on top of Oxlint's own defaults. The `slop/` rules have no automatic fixes. Each warning marks a place to review, not a proven defect.
 
-## Custom rules
+## Rules
 
-| Rule | Reports |
-| --- | --- |
-| `slop/no-silent-catch-fallback` | Catch returns only empty data without handling or reporting the error |
-| `slop/no-boolean-return-branches` | If/else branches only return opposite boolean literals |
-| `slop/no-identical-ternary-branches` | Conditional expression has identical branch tokens |
-| `slop/no-nested-only-if` | If contains only another if and neither has an else |
-| `slop/no-double-assertion` | Assertion through `any` or `unknown` bypasses assignability |
-| `slop/no-duplicate-blocks` | Later copy of a block with at least two executable statements in the same file |
+### `slop/no-silent-catch-fallback`
 
-Duplicate checks ignore whitespace and comments but preserve identifiers, operators, and literal values. They do not compare files or infer that different code means the same thing. Type-only blocks and single-statement wrappers are excluded.
+Reports a `catch` whose only statement returns nothing, `null`, `true`, `false`, `0`, `""`, `[]`, or `{}`.
 
-The preset also enables native Oxlint rules:
+```typescript
+try { return JSON.parse(text); } catch { return {}; }
+```
 
-- `no-empty` with empty catches disallowed.
-- `no-useless-catch`.
-- `no-unneeded-ternary`.
-- `complexity` with a maximum of 10 independent paths per function.
+Callers may not be able to tell failure from a valid empty result. Handle a specific error, report it, or let it propagate. A catch that logs before returning, or returns a non-empty default, is not reported.
 
-Type restrictions such as `typescript/no-explicit-any` and `typescript/no-non-null-assertion` are available from Oxlint. Enable those separately when they fit your project.
+### `slop/no-boolean-return-branches`
 
-## Existing configurations
+Reports an `if`/`else` where each branch only returns the opposite boolean literal.
 
-To select individual custom rules, add the plugin to your existing configuration:
+```typescript
+if (input) { return true; } else { return false; }
+```
+
+Return the converted condition instead, such as `Boolean(input)`. If the branches are reversed, return the negated condition.
+
+### `slop/no-identical-ternary-branches`
+
+Reports a conditional expression whose two branches have the same tokens, ignoring whitespace and comments.
+
+```typescript
+const value = flag ? result : result;
+```
+
+### `slop/no-nested-only-if`
+
+Reports an `if` whose only statement is another `if`, when neither has an `else`.
+
+```typescript
+if (first) { if (second) { work(); } }
+```
+
+Review whether the conditions can be combined with `&&`.
+
+### `slop/no-double-assertion`
+
+Reports an assertion that goes through `any` or `unknown`, in either `as` or angle-bracket form.
+
+```typescript
+const value = input as unknown as Result;
+const other = <Result><unknown>input;
+```
+
+Review the producer and consumer types, or validate the value where it enters the program.
+
+### `slop/no-duplicate-blocks`
+
+Reports a block that repeats the tokens of an earlier block in the same file, and names the line of the first copy.
+
+```typescript
+export function a() { const value = work(); return value + 1; }
+export function b() { const value = work(); return value + 1; } // repeats line 1
+```
+
+Whitespace and comments are ignored. Identifiers, literals, and operators must match exactly. A block counts only if it keeps at least two statements after dropping empty statements, type aliases, interfaces, and declared function signatures, so single-statement wrappers and blocks made only of those declarations are not reported.
+
+### Native Oxlint rules in the preset
+
+- `no-empty`, with empty catches disallowed
+- `no-useless-catch`
+- `no-unneeded-ternary`
+- `complexity`, with a maximum of 10 paths per function
+
+`typescript/no-explicit-any` and `typescript/no-non-null-assertion` are not part of the preset. Add them in your config, or on the command line with `-W typescript/no-explicit-any`.
+
+## Use with an existing config
+
+Add the plugin and pick the rules you want. In `oxlint.config.ts`:
 
 ```typescript
 import { defineConfig } from "oxlint";
 
 export default defineConfig({
-  jsPlugins: [{ name: "slop", specifier: "@obviyus/oxlint-slop" }],
+  jsPlugins: ["@obviyus/oxlint-slop"],
   rules: {
     "slop/no-silent-catch-fallback": "warn",
     "slop/no-duplicate-blocks": "warn",
@@ -66,20 +117,38 @@ export default defineConfig({
 });
 ```
 
-Use standard Oxlint suppressions for accepted cases:
+Or in `.oxlintrc.json`:
+
+```json
+{
+  "jsPlugins": ["@obviyus/oxlint-slop"],
+  "rules": {
+    "slop/no-silent-catch-fallback": "warn",
+    "slop/no-duplicate-blocks": "warn"
+  }
+}
+```
+
+Oxlint marks JavaScript plugins and TypeScript config files as experimental.
+
+## Suppress an accepted case
+
+Use standard Oxlint comments:
 
 ```typescript
-// oxlint-disable-next-line slop/no-silent-catch-fallback -- This adapter treats absence as an empty result.
+// oxlint-disable-next-line slop/no-silent-catch-fallback -- Absence is a valid empty result for this adapter.
 function load() { try { return readExternal(); } catch { return null; } }
 ```
 
-JavaScript, JSX, TypeScript, TSX, MJS, CJS, MTS, and CTS use Oxlint's native parsers. The plugin has no Python, Tree-sitter, or ast-grep dependency.
+## Limits
 
-## Interpreting findings
+- Rules match syntax only. They do not use type information and cannot judge whether a fallback, duplicate, or cast is intentional. Treat warnings as review prompts, not as a quality score or a sign of who wrote the code.
+- `no-silent-catch-fallback` only sees catches whose single statement is a return. Other ways of swallowing errors are not reported.
+- `no-duplicate-blocks` works within one file. It does not compare files, and it does not treat renamed variables or changed literals as duplicates.
+- Supported file extensions: `.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.mts`, `.cts`. Your Oxlint ignore settings and rule selection still apply.
+- Tested with Oxlint 1.78.0.
 
-Findings are review candidates, not quality grades. A duplicate block can be intentional; a wrapper or validation check can carry a useful contract. Preserve behavior and domain meaning when deciding what to change.
-
-This plugin does not calculate SlopCodeBench's aggregate verbosity or erosion scores. Use rule counts, source locations, and function complexity to locate code worth reviewing. Compare a consistent source scope and configuration over time. See [Measuring code sloppiness](https://earendil.com/posts/measuring-code-sloppiness/) for why optimizing a score alone can make it less useful.
+For the thinking behind these checks, see [Measuring code sloppiness](https://earendil.com/posts/measuring-code-sloppiness/).
 
 ## Development
 
@@ -88,6 +157,6 @@ bun install --frozen-lockfile
 bun run check
 ```
 
-Tests run the real Oxlint CLI and cover valid cases, reported cases, all supported extensions, suppression comments, and file isolation across workers.
+`bun run check` typechecks, builds `dist/`, lints, and runs the tests. Tests run the real Oxlint CLI on temporary files, cover every rule and file extension, suppression comments, and multi-worker isolation, and install the packed package to load its exported config from `node_modules`.
 
-`bun run build` generates the committed JavaScript in `dist/` so consumers need no install scripts or TypeScript loader. Tests also install the packed package and load its exported configuration from `node_modules`. CI checks that `dist/` matches the TypeScript source.
+`dist/` is committed so consumers need no build step. Run `bun run build` after changing `src/`. CI fails if `dist/` differs from the source.
