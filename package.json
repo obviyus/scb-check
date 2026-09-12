@@ -1,0 +1,18 @@
+{
+  "name": "@obviyus/oxlint-slop",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Oxlint rules for redundant and over-defensive TypeScript and JavaScript",
+  "license": "Apache-2.0",
+  "repository": { "type": "git", "url": "git+https://github.com/obviyus/scb-check.git" },
+  "exports": { ".": "./src/plugin.ts", "./config": "./src/config.ts" },
+  "files": ["src/*.ts", "README.md", "LICENSE"],
+  "scripts": {
+    "check": "bun run typecheck && bun run lint && bun test test",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint src test"
+  },
+  "dependencies": { "@oxlint/plugins": "1.78.0" },
+  "peerDependencies": { "oxlint": ">=1.78.0" },
+  "devDependencies": { "@types/bun": "1.4.2", "oxlint": "1.78.0", "typescript": "7.0.2" }
+}
